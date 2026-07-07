@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Study Chat</title>
+  <style>
+    :root { --accent: #10a37f; --bg: #f7f7f8; --border: #e3e3e6; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg); color: #1a1a1a; height: 100vh; display: flex; flex-direction: column;
+    }
+    header {
+      background: #fff; border-bottom: 1px solid var(--border);
+      padding: 14px 20px; display: flex; align-items: center; gap: 12px;
+    }
+    header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+    header .pid { margin-left: auto; font-size: 13px; color: #666; }
+
+    /* Participant ID entry screen */
+    #gate {
+      flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px;
+    }
+    #gate .card {
+      background: #fff; border: 1px solid var(--border); border-radius: 12px;
+      padding: 32px; max-width: 400px; width: 100%; text-align: center;
+    }
+    #gate h2 { margin: 0 0 8px; font-size: 20px; }
+    #gate p { color: #666; font-size: 14px; margin: 0 0 20px; }
+    #gate input {
+      width: 100%; padding: 12px 14px; font-size: 15px; border: 1px solid var(--border);
+      border-radius: 8px; margin-bottom: 12px;
+    }
+    button {
+      background: var(--accent); color: #fff; border: none; border-radius: 8px;
+      padding: 12px 18px; font-size: 15px; cursor: pointer; font-weight: 500;
+    }
+    button:hover { opacity: 0.9; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #gate button { width: 100%; }
+
+    /* Chat area */
+    #chat { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+    #messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+    .msg { max-width: 720px; width: fit-content; padding: 12px 16px; border-radius: 14px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
+    .msg.user { background: var(--accent); color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
+    .msg.assistant { background: #fff; border: 1px solid var(--border); align-self: flex-start; border-bottom-left-radius: 4px; }
+    .msg.error { background: #fde8e8; color: #b91c1c; align-self: center; font-size: 14px; }
+    #inputBar {
+      border-top: 1px solid var(--border); background: #fff; padding: 14px 20px;
+      display: flex; gap: 10px; align-items: flex-end;
+    }
+    #inputBar textarea {
+      flex: 1; resize: none; border: 1px solid var(--border); border-radius: 10px;
+      padding: 12px 14px; font-size: 15px; font-family: inherit; max-height: 160px; line-height: 1.4;
+    }
+    .typing { font-size: 13px; color: #888; align-self: flex-start; padding: 4px 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Study Chat</h1>
+    <span class="pid" id="pidLabel"></span>
+  </header>
+
+  <!-- Screen 1: enter Participant ID -->
+  <div id="gate">
+    <div class="card">
+      <h2>Welcome</h2>
+      <p>Please enter your Participant ID to begin the chat.</p>
+      <input id="pidInput" placeholder="e.g. P001" autocomplete="off" />
+      <button id="startBtn">Start chatting</button>
+    </div>
+  </div>
+
+  <!-- Screen 2: the chat -->
+  <div id="chat">
+    <div id="messages"></div>
+    <div id="inputBar">
+      <textarea id="input" rows="1" placeholder="Type your message..."></textarea>
+      <button id="sendBtn">Send</button>
+    </div>
+  </div>
+
+  <script>
+    let participantId = '';
+    let history = []; // the running conversation, sent to the server each time
+
+    const gate = document.getElementById('gate');
+    const chat = document.getElementById('chat');
+    const pidInput = document.getElementById('pidInput');
+    const startBtn = document.getElementById('startBtn');
+    const messagesEl = document.getElementById('messages');
+    const input = document.getElementById('input');
+    const sendBtn = document.getElementById('sendBtn');
+    const pidLabel = document.getElementById('pidLabel');
+
+    // --- Start: capture Participant ID ---
+    function start() {
+      const id = pidInput.value.trim();
+      if (!id) { pidInput.focus(); return; }
+      participantId = id;
+      pidLabel.textContent = 'Participant: ' + id;
+      gate.style.display = 'none';
+      chat.style.display = 'flex';
+      input.focus();
+    }
+    startBtn.addEventListener('click', start);
+    pidInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') start(); });
+
+    // --- Show a message bubble on screen ---
+    function addBubble(role, text) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + role;
+      div.textContent = text;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return div;
+    }
+
+    // --- Auto-grow the text box as you type ---
+    input.addEventListener('input', () => {
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+    });
+
+    // --- Send a message ---
+    async function send() {
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      input.style.height = 'auto';
+      sendBtn.disabled = true;
+
+      addBubble('user', text);
+      history.push({ role: 'user', content: text });
+
+      const typing = document.createElement('div');
+      typing.className = 'typing';
+      typing.textContent = 'Claude is typing...';
+      messagesEl.appendChild(typing);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ participantId, messages: history })
+        });
+        typing.remove();
+        const data = await res.json();
+        if (!res.ok) {
+          addBubble('error', data.error || 'Something went wrong.');
+        } else {
+          addBubble('assistant', data.reply);
+          history.push({ role: 'assistant', content: data.reply });
+        }
+      } catch (err) {
+        typing.remove();
+        addBubble('error', 'Could not reach the server. Please try again.');
+      } finally {
+        sendBtn.disabled = false;
+        input.focus();
+      }
+    }
+
+    sendBtn.addEventListener('click', send);
+    input.addEventListener('keydown', (e) => {
+      // Enter sends; Shift+Enter makes a new line.
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    });
+  </script>
+</body>
+</html>

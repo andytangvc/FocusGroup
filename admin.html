@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Study Chat - Admin Logs</title>
+  <style>
+    :root { --accent: #10a37f; --border: #e3e3e6; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f7f7f8; color: #1a1a1a; }
+    header { background: #fff; border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    header h1 { font-size: 18px; margin: 0; }
+    .controls { margin-left: auto; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    input, select, button { font-size: 14px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-family: inherit; }
+    button { background: var(--accent); color: #fff; border: none; cursor: pointer; }
+    button.secondary { background: #fff; color: #333; border: 1px solid var(--border); }
+    button:hover { opacity: 0.9; }
+    #login { max-width: 380px; margin: 80px auto; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 32px; text-align: center; }
+    #login h2 { margin: 0 0 16px; }
+    #login input { width: 100%; margin-bottom: 12px; }
+    #login button { width: 100%; }
+    .wrap { padding: 24px; }
+    .stats { color: #666; font-size: 13px; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; font-size: 14px; }
+    th { background: #fafafa; font-weight: 600; position: sticky; top: 0; }
+    td.content { white-space: pre-wrap; word-break: break-word; max-width: 640px; }
+    tr.user td.role { color: #2563eb; font-weight: 600; }
+    tr.assistant td.role { color: var(--accent); font-weight: 600; }
+    td.time { color: #888; font-size: 12px; white-space: nowrap; }
+    .err { color: #b91c1c; font-size: 13px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <!-- Login screen -->
+  <div id="login">
+    <h2>Admin Login</h2>
+    <input id="pw" type="password" placeholder="Admin password" />
+    <button id="loginBtn">View logs</button>
+    <div class="err" id="loginErr"></div>
+  </div>
+
+  <!-- Logs screen (hidden until logged in) -->
+  <div id="app" style="display:none;">
+    <header>
+      <h1>Chat Logs</h1>
+      <div class="controls">
+        <select id="filter"><option value="">All participants</option></select>
+        <button class="secondary" id="refresh">Refresh</button>
+        <button id="download">Download CSV</button>
+      </div>
+    </header>
+    <div class="wrap">
+      <div class="stats" id="stats"></div>
+      <table>
+        <thead>
+          <tr><th>Time</th><th>Participant</th><th>Who</th><th>Message</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    let password = '';
+    let allLogs = [];
+
+    const loginEl = document.getElementById('login');
+    const appEl = document.getElementById('app');
+    const pwInput = document.getElementById('pw');
+    const loginErr = document.getElementById('loginErr');
+
+    async function login() {
+      password = pwInput.value;
+      const ok = await loadLogs();
+      if (ok) {
+        loginEl.style.display = 'none';
+        appEl.style.display = 'block';
+      } else {
+        loginErr.textContent = 'Wrong password, or the server is unreachable.';
+      }
+    }
+
+    async function loadLogs() {
+      try {
+        const res = await fetch('/api/logs', { headers: { 'x-admin-password': password } });
+        if (!res.ok) return false;
+        const data = await res.json();
+        allLogs = data.logs || [];
+        buildFilter();
+        render();
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    function buildFilter() {
+      const filter = document.getElementById('filter');
+      const current = filter.value;
+      const ids = [...new Set(allLogs.map((l) => l.participantId))].sort();
+      filter.innerHTML = '<option value="">All participants</option>' +
+        ids.map((id) => `<option value="${id}">${id}</option>`).join('');
+      filter.value = current;
+    }
+
+    function esc(s) {
+      return String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    }
+
+    function render() {
+      const filterVal = document.getElementById('filter').value;
+      const rows = filterVal ? allLogs.filter((l) => l.participantId === filterVal) : allLogs;
+      const tbody = document.getElementById('rows');
+      tbody.innerHTML = rows.map((l) => `
+        <tr class="${l.role}">
+          <td class="time">${esc(new Date(l.time).toLocaleString())}</td>
+          <td>${esc(l.participantId)}</td>
+          <td class="role">${l.role === 'user' ? 'Participant' : 'Claude'}</td>
+          <td class="content">${esc(l.content)}</td>
+        </tr>`).join('');
+      const participants = new Set(allLogs.map((l) => l.participantId)).size;
+      document.getElementById('stats').textContent =
+        `${rows.length} messages shown  ·  ${participants} participant(s) total`;
+    }
+
+    document.getElementById('loginBtn').addEventListener('click', login);
+    pwInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
+    document.getElementById('refresh').addEventListener('click', loadLogs);
+    document.getElementById('filter').addEventListener('change', render);
+    document.getElementById('download').addEventListener('click', () => {
+      window.location = '/api/logs.csv?password=' + encodeURIComponent(password);
+    });
+  </script>
+</body>
+</html>
