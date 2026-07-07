@@ -1,0 +1,17 @@
+{
+  "name": "study-chat",
+  "version": "1.0.0",
+  "description": "A shared Claude chat access point for research participants, with automatic chat logging.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}
